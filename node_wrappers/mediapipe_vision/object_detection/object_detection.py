@@ -53,6 +53,22 @@ class MediaPipeObjectDetectorNode(BaseMediaPipeDetectorNode):
                     "INT",
                     {"default": 5, "min": 1, "max": 50, "step": 1, "tooltip": "Maximum number of objects to detect"},
                 ),
+                "category_allowlist": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated list of categories to detect (e.g., 'person,cat'). Empty means all categories.",
+                    },
+                ),
+                "category_denylist": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated list of categories to exclude. Empty means not to exclude any categories.",
+                    },
+                ),
             }
         )
 
@@ -64,6 +80,8 @@ class MediaPipeObjectDetectorNode(BaseMediaPipeDetectorNode):
         model_info: dict,
         min_confidence: float,
         max_results: int,
+        category_allowlist: str,
+        category_denylist: str,
         running_mode: str,
         delegate: str,
     ):
@@ -75,9 +93,19 @@ class MediaPipeObjectDetectorNode(BaseMediaPipeDetectorNode):
         # Initialize or update detector
         detector = self.initialize_or_update_detector(model_path)
 
+        # Parse the allow / deny list string into a list, or None if empty
+        allowed_categories = [cat.strip() for cat in category_allowlist.split(',') if cat.strip()] or None
+        denied_categories = [cat.strip() for cat in category_denylist.split(',') if cat.strip()] or None
+
         # Perform detection with all parameters
         batch_results = detector.detect(
-            image, score_threshold=min_confidence, max_results=max_results, running_mode=running_mode, delegate=delegate
+            image,
+            score_threshold=min_confidence,
+            max_results=max_results,
+            category_allowlist=allowed_categories,
+            category_denylist=denied_categories,
+            running_mode=running_mode,
+            delegate=delegate
         )
 
         return (batch_results,)

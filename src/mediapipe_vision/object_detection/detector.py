@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional
 
 import mediapipe as mp
 import numpy as np
@@ -40,6 +40,8 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
             running_mode=mode_enum,
             score_threshold=kwargs.get('score_threshold', 0.5),
             max_results=kwargs.get('max_results', 5),
+            category_allowlist=kwargs.get('category_allowlist', None),
+            category_denylist=kwargs.get('category_denylist', None),
         )
 
     def _create_detector_instance(self, options: vision.ObjectDetectorOptions) -> vision.ObjectDetector:
@@ -89,6 +91,8 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
         image: torch.Tensor,
         score_threshold: float = 0.5,
         max_results: int = 5,
+        category_allowlist: Optional[List[str]] = None,
+        category_denylist: Optional[List[str]] = None,
         running_mode: str = "video",
         delegate: str = "cpu",
     ) -> List[List[ObjectDetectionResult]]:
@@ -99,4 +103,6 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
             delegate=delegate,
             score_threshold=score_threshold,
             max_results=max_results,
+            category_allowlist=category_allowlist,
+            category_denylist=category_denylist,
         )
