@@ -39,3 +39,5 @@ assets/*
 
 # IDE specific files
 .DS_Store
+
+source.txt
