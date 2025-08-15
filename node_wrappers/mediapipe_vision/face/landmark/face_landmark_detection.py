@@ -1,13 +1,10 @@
 """Node wrapper for face detection."""
 
 import logging
-
 import torch
 
 from .....src.mediapipe_vision.face_landmark.detector import FaceLandmarkDetector
 from .....src.mediapipe_vision.common.base_detector_node import BaseMediaPipeDetectorNode
-
-# Import Base Classes
 from .....src.mediapipe_vision.common.model_loader import MediaPipeModelLoaderBaseNode
 
 logger = logging.getLogger(__name__)
@@ -122,26 +119,28 @@ class MediaPipeFaceLandmarkerNode(BaseMediaPipeDetectorNode):
     ):
         """Performs face landmark detection with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
+        # 2. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "num_faces": max_results,
+            "min_detection_confidence": min_confidence,
+            "min_presence_confidence": min_presence_confidence,
+            "min_tracking_confidence": min_tracking_confidence,
+            "output_blendshapes": output_blendshapes,
+            "output_transform_matrix": output_transform_matrix,
+        }
 
-        # Perform detection with all parameters
-        face_landmarks_batch, blendshapes_batch, matrices_batch = detector.detect(
-            image,
-            num_faces=max_results,
-            min_detection_confidence=min_confidence,
-            min_presence_confidence=min_presence_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-            output_blendshapes=output_blendshapes,
-            output_transform_matrix=output_transform_matrix,
-            running_mode=running_mode,
-            delegate=delegate,
-        )
+        # 3. Initialize or update detector using the base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
 
-        # Return the results with optional empty lists for disabled outputs
+        # 4. Perform detection on the image batch
+        face_landmarks_batch, blendshapes_batch, matrices_batch = detector.detect(image)
+
+        # 5. Return the results, ensuring empty lists for disabled outputs
         return (
             face_landmarks_batch,
             blendshapes_batch if output_blendshapes else [],

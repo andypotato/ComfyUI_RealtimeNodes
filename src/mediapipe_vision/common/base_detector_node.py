@@ -40,9 +40,9 @@ class BaseMediaPipeDetectorNode:
     DESCRIPTION = ""  # Override with specific node description
 
     def __init__(self):
-        """Initialize with empty detector and model path."""
+        """Initialize with empty detector and last known configuration."""
         self._detector = None
-        self._model_path = None
+        self._last_config: Dict | None = None
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -84,56 +84,47 @@ class BaseMediaPipeDetectorNode:
 
         return model_path
 
-    def initialize_or_update_detector(self, model_path: str):
+    def initialize_or_update_detector(self, model_path: str, **config_kwargs):
+
         """Initialize detector or update if model path changed."""
         if self.DETECTOR_CLASS is None:
             raise NotImplementedError("Subclasses must set DETECTOR_CLASS to their specific detector class")
 
-        if self._detector is None or self._model_path != model_path:
+        current_config = {
+            "model_path": model_path,
+            **config_kwargs
+        }
+
+        # Re-create the detector if it's missing or if the config has changed
+        if self._detector is None or self._last_config != current_config:
             # Close existing detector if needed
             if self._detector and hasattr(self._detector, "close"):
                 try:
-                    logger.info(f"Closing existing detector for {self._model_path}")
+                    logger.info(f"Closing existing detector due to config change.")
                     self._detector.close()
                 except Exception as e:
                     logger.warning(f"Error closing detector: {e}")
 
-            # Create new detector
-            logger.info(f"Creating new {self.DETECTOR_CLASS.__name__} instance for {model_path}")
-            self._detector = self.DETECTOR_CLASS(model_path)
-            self._model_path = model_path
-        elif not hasattr(self._detector, "_detector_instance"):
-            # Re-initialize if internal instance is missing
-            logger.warning(f"Re-initializing detector wrapper due to missing internal instance")
-            self._detector = self.DETECTOR_CLASS(model_path)
-            self._model_path = model_path
-
+            # Create new detector, passing the full configuration
+            logger.info(f"Creating new {self.DETECTOR_CLASS.__name__} instance with config: {current_config}")
+            self._detector = self.DETECTOR_CLASS(**current_config)
+            self._last_config = current_config
+        
         return self._detector
 
     def detect(self, **kwargs):
         """
-        Main detection function, should be implemented by subclasses.
-        This is a placeholder that subclasses can use as a template.
+        Main detection function, must be implemented by subclasses.
         """
-        # Basic implementation that subclasses can override
-
-        # 1. Extract and validate model_info
-        model_info = kwargs.get("model_info")
-        model_path = self.validate_model_info(model_info)
-
-        # 2. Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
-
-        # 3. Call detector's detect method with appropriate parameters
-        # This part should be implemented by subclasses
-
         raise NotImplementedError("Subclasses must implement or override the detect method")
 
     def __del__(self):
         """Clean up resources by closing detector."""
         if hasattr(self, "_detector") and self._detector and hasattr(self._detector, "close"):
             try:
-                logger.info(f"Closing detector instance in __del__ for {self._model_path}")
+                # Use the stored config for a more informative log message
+                model_path = self._last_config.get('model_path') if self._last_config else "N/A"
+                logger.info(f"Closing detector instance in __del__ for {model_path}")
                 self._detector.close()
             except Exception as e:
                 logger.warning(f"Error closing detector in __del__: {e}")

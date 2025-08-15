@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 from .....src.mediapipe_vision.face_detection.detector import FaceDetector
@@ -62,14 +61,21 @@ class MediaPipeFaceDetectorNode(BaseMediaPipeDetectorNode):
     def detect(self, image: torch.Tensor, model_info: dict, min_confidence: float, running_mode: str, delegate: str):
         """Performs face detection with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
+        # 2. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "min_detection_confidence": min_confidence,
+        }
 
-        # Perform detection with all parameters
-        batch_results = detector.detect(image, min_detection_confidence=min_confidence, running_mode=running_mode, delegate=delegate)
+        # 3. Initialize or update detector using the new base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
+
+        # 4. Perform detection on the image batch
+        batch_results = detector.detect(image)
 
         return (batch_results,)
 

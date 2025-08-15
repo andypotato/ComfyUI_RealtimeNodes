@@ -5,14 +5,10 @@ This module contains the implementation of MediaPipe Face Detection functionalit
 
 from typing import Any, List
 
-import mediapipe as mp
-import numpy as np
 import torch
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.core.base_options import BaseOptions
 
-from ...utils.timing import TimestampProvider  # Import from utils
 from ..common import BaseDetector
 from ..types import BoundingBox, FaceDetectionResult, FaceKeypoint
 
@@ -20,25 +16,18 @@ from ..types import BoundingBox, FaceDetectionResult, FaceKeypoint
 class FaceDetector(BaseDetector[FaceDetectionResult]):
     """Detects faces in an image using MediaPipe FaceDetector."""
 
-    def __init__(self, model_path: str):
-        """Initialize the detector with the model path.
+    def __init__(self, model_path: str, **kwargs):
+        """Initialize the detector with the model path and configuration.
 
         Args:
             model_path: Path to the MediaPipe FaceDetector .task file.
+            **kwargs: Configuration options for the detector.
         """
-        if not model_path:
-            raise ValueError("A valid model_path must be provided.")
-
-        self.model_path = model_path
-        self._detector_instance = None
-        self._current_options = None  # Store current options for comparison
-        self._timestamp_provider = None  # Initialize TimestampProvider later
+        super().__init__(model_path, **kwargs)
 
     def _create_detector_options(self, base_options: python.BaseOptions,
                                mode_enum: vision.RunningMode, **kwargs) -> vision.FaceDetectorOptions:
-        """Create FaceDetector-specific options with parameters:
-            - min_detection_confidence: Minimum confidence for face detection
-        """
+        """Create FaceDetector-specific options."""
         return vision.FaceDetectorOptions(
             base_options=base_options,
             running_mode=mode_enum,
@@ -46,23 +35,11 @@ class FaceDetector(BaseDetector[FaceDetectionResult]):
         )
 
     def _create_detector_instance(self, options: vision.FaceDetectorOptions) -> vision.FaceDetector:
+        """Create the FaceDetector instance from options."""
         return vision.FaceDetector.create_from_options(options)
 
-    def _get_options_tuple(self, running_mode: str = None, delegate: str = None, **kwargs) -> tuple:
-        if self._current_options:
-            return (
-                self._current_options.min_detection_confidence,
-                running_mode,
-                delegate,
-            )
-        else:
-            return (
-                kwargs.get('min_detection_confidence', 0.5),
-                running_mode,
-                delegate,
-            )
-
     def _process_detection_result(self, detection_result: Any) -> List[FaceDetectionResult]:
+        """Process a single image's detection result."""
         current_image_detections = []
         if detection_result and detection_result.detections:
             for detection in detection_result.detections:
@@ -79,17 +56,11 @@ class FaceDetector(BaseDetector[FaceDetectionResult]):
                 current_image_detections.append(FaceDetectionResult(bounding_box=bbox, keypoints=keypoints, score=score))
         return current_image_detections
 
-    def detect(
-        self,
-        image: torch.Tensor,
-        min_detection_confidence: float = 0.5,
-        running_mode: str = "video",
-        delegate: str = "cpu",
-    ) -> List[List[FaceDetectionResult]]:
-        """Detects faces in the input image tensor."""
-        return super().detect(
-            image,
-            running_mode=running_mode,
-            delegate=delegate,
-            min_detection_confidence=min_detection_confidence,
-        )
+    def detect(self, image_batch: torch.Tensor) -> List[List[FaceDetectionResult]]:
+        """Detects faces in a batch of images."""
+        batch_results = []
+        for i in range(image_batch.shape[0]):
+            # Use the run_detection method from the base class for each image
+            result = self.run_detection(image_batch[i])
+            batch_results.append(result)
+        return batch_results

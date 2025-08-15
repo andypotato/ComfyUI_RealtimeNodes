@@ -1,13 +1,9 @@
 from typing import Any, List
 
-import mediapipe as mp
-import numpy as np
 import torch
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from mediapipe.tasks.python.core.base_options import BaseOptions
 
-from ...utils.timing import TimestampProvider  # Import TimestampProvider
 from ..common import BaseDetector
 from ..types import HandLandmarksResult, LandmarkPoint
 
@@ -15,29 +11,13 @@ from ..types import HandLandmarksResult, LandmarkPoint
 class HandLandmarkDetector(BaseDetector[HandLandmarksResult]):
     """Detects hand landmarks using MediaPipe HandLandmarker."""
 
-    def __init__(self, model_path: str):
-        """Initialize the detector with the model path.
-
-        Args:
-            model_path: Path to the MediaPipe HandLandmarker .task file.
-        """
-        if not model_path:
-            raise ValueError("A valid model_path must be provided.")
-        # Verify file exists? Optional, MediaPipe might handle this.
-
-        self.model_path = model_path
-        self._detector_instance = None
-        self._current_options = None
-        self._timestamp_provider = None  # Added
+    def __init__(self, model_path: str, **kwargs):
+        """Initialize the detector with the model path and configuration."""
+        super().__init__(model_path, **kwargs)
 
     def _create_detector_options(self, base_options: python.BaseOptions,
                                mode_enum: vision.RunningMode, **kwargs) -> vision.HandLandmarkerOptions:
-        """Create HandLandmarker-specific options with parameters:
-            - num_hands: Maximum number of hands to detect
-            - min_detection_confidence: Minimum confidence for hand detection
-            - min_presence_confidence: Minimum confidence for hand presence
-            - min_tracking_confidence: Minimum confidence for hand tracking
-        """
+        """Create HandLandmarker-specific options."""
         return vision.HandLandmarkerOptions(
             base_options=base_options,
             running_mode=mode_enum,
@@ -48,29 +28,11 @@ class HandLandmarkDetector(BaseDetector[HandLandmarksResult]):
         )
 
     def _create_detector_instance(self, options: vision.HandLandmarkerOptions) -> vision.HandLandmarker:
+        """Create the HandLandmarker instance from options."""
         return vision.HandLandmarker.create_from_options(options)
 
-    def _get_options_tuple(self, running_mode: str = None, delegate: str = None, **kwargs) -> tuple:
-        if self._current_options:
-            return (
-                self._current_options.num_hands,
-                self._current_options.min_hand_detection_confidence,
-                self._current_options.min_hand_presence_confidence,
-                self._current_options.min_tracking_confidence,
-                running_mode,
-                delegate,
-            )
-        else:
-            return (
-                kwargs.get('num_hands', 2),
-                kwargs.get('min_detection_confidence', 0.5),
-                kwargs.get('min_presence_confidence', 0.5),
-                kwargs.get('min_tracking_confidence', 0.5),
-                running_mode,
-                delegate,
-            )
-
     def _process_detection_result(self, detection_result: Any) -> List[HandLandmarksResult]:
+        """Process a single image's detection result."""
         current_image_results = []
         if detection_result and detection_result.hand_landmarks:
             for hand_idx, hand_landmarks_mp in enumerate(detection_result.hand_landmarks):
@@ -94,23 +56,11 @@ class HandLandmarkDetector(BaseDetector[HandLandmarksResult]):
                 )
         return current_image_results
 
-    def detect(
-        self,
-        image: torch.Tensor,
-        num_hands: int = 2,
-        min_detection_confidence: float = 0.5,
-        min_presence_confidence: float = 0.5,
-        min_tracking_confidence: float = 0.5,
-        running_mode: str = "video",
-        delegate: str = "cpu",
-    ) -> List[List[HandLandmarksResult]]:
-        """Detects hand landmarks in the input image tensor."""
-        return super().detect(
-            image,
-            running_mode=running_mode,
-            delegate=delegate,
-            num_hands=num_hands,
-            min_detection_confidence=min_detection_confidence,
-            min_presence_confidence=min_presence_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-        )
+    def detect(self, image_batch: torch.Tensor) -> List[List[HandLandmarksResult]]:
+        """Detects hand landmarks in a batch of images."""
+        batch_results = []
+        for i in range(image_batch.shape[0]):
+            # Use the run_detection method from the base class for each image
+            result = self.run_detection(image_batch[i])
+            batch_results.append(result)
+        return batch_results

@@ -1,11 +1,8 @@
 import logging
-
 import torch
 
 from .....src.mediapipe_vision.gesture_recognition.detector import GestureRecognizer
 from .....src.mediapipe_vision.common.base_detector_node import BaseMediaPipeDetectorNode
-
-# Import Base Loader and Detector
 from .....src.mediapipe_vision.common.model_loader import MediaPipeModelLoaderBaseNode
 
 logger = logging.getLogger(__name__)
@@ -103,25 +100,26 @@ class MediaPipeGestureRecognizerNode(BaseMediaPipeDetectorNode):
     ):
         """Performs gesture recognition on the input image."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
+        # 2. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "num_hands": max_results,
+            "min_detection_confidence": min_confidence,
+            "min_tracking_confidence": min_tracking_confidence,
+            "min_presence_confidence": min_presence_confidence,
+        }
 
-        # Call the detector's recognize method with standardized parameters
-        gesture_results_batch = detector.recognize(
-            image,
-            num_hands=max_results,
-            min_detection_confidence=min_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-            min_presence_confidence=min_presence_confidence,
-            running_mode=running_mode,
-            delegate=delegate,
-        )
+        # 3. Initialize or update detector using the base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
+
+        # 4. Perform detection on the image batch
+        gesture_results_batch = detector.detect(image)
 
         return (gesture_results_batch,)
-
 
 # --- Mappings ---
 NODE_CLASS_MAPPINGS = {

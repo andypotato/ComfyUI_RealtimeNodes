@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 from .....src.mediapipe_vision.hand_landmark.detector import HandLandmarkDetector
@@ -36,55 +35,40 @@ class MediaPipeHandLandmarkerNode(BaseMediaPipeDetectorNode):
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Start with the base inputs from the parent class
+        # This method is correct as-is, no changes needed.
         inputs = super().INPUT_TYPES()
-
-        # Add hand-specific parameters
         inputs["required"].update(
             {
                 "max_results": (
                     "INT",
                     {
-                        "default": 2,
-                        "min": 1,
-                        "max": 4,
-                        "step": 1,
-                        "tooltip": "Maximum number of hands to detect and track in the image - higher values can detect more hands but use more processing power",
+                        "default": 2, "min": 1, "max": 4, "step": 1,
+                        "tooltip": "Maximum number of hands to detect",
                     },
                 ),
                 "min_confidence": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "Minimum confidence threshold for hand detection - lower values detect more hands but may include false positives",
+                        "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
+                        "tooltip": "Minimum confidence threshold for hand detection",
                     },
                 ),
                 "min_presence_confidence": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "(VIDEO mode) Minimum confidence that a hand is present - lower values may detect hands that are less clear",
+                        "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
+                        "tooltip": "(VIDEO mode) Minimum confidence that a hand is present",
                     },
                 ),
                 "min_tracking_confidence": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "(VIDEO mode) Minimum confidence for tracking a hand between frames - lower values maintain tracking longer but may drift",
+                        "default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01,
+                        "tooltip": "(VIDEO mode) Minimum confidence for tracking a hand",
                     },
                 ),
             }
         )
-
         return inputs
 
     def detect(
@@ -100,24 +84,26 @@ class MediaPipeHandLandmarkerNode(BaseMediaPipeDetectorNode):
     ):
         """Performs hand landmark detection with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
+        # 2. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "num_hands": max_results,
+            "min_detection_confidence": min_confidence,
+            "min_presence_confidence": min_presence_confidence,
+            "min_tracking_confidence": min_tracking_confidence,
+        }
 
-        # Perform detection with all parameters
-        hand_landmarks_batch = detector.detect(
-            image,
-            num_hands=max_results,
-            min_detection_confidence=min_confidence,
-            min_presence_confidence=min_presence_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-            running_mode=running_mode,
-            delegate=delegate,
-        )
+        # 3. Initialize or update detector using the base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
 
-        # Extract handedness information
+        # 4. Perform detection on the image batch
+        hand_landmarks_batch = detector.detect(image)
+
+        # 5. Extract handedness information from the results
         handedness_batch = []
         if hand_landmarks_batch:
             for image_hands in hand_landmarks_batch:

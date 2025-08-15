@@ -1,21 +1,16 @@
-"""Node wrapper for image segmentation"""
-
 import logging
-
-import cv2  # For visualization
+import cv2
 import numpy as np
 import torch
 
-# Imports from this project
 from ....src.mediapipe_vision.image_segmentation.segmenter import ImageSegmenter
 from ....src.mediapipe_vision.common.base_detector_node import BaseMediaPipeDetectorNode
-
-# Import Base Classes
 from ....src.mediapipe_vision.common.model_loader import MediaPipeModelLoaderBaseNode
 
 logger = logging.getLogger(__name__)
 
 _category = "Realtime Nodes/MediaPipe Vision/ImageSegmentation"
+
 # Define class names and their corresponding indices for multiclass models
 MULTICLASS_NAMES = {
     "Background": 0,
@@ -69,42 +64,14 @@ class MediaPipeImageSegmenterNode(BaseMediaPipeDetectorNode):
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Start with the base inputs from the parent class
+        # This method is correct as-is, no changes needed.
         inputs = super().INPUT_TYPES()
-
-        # Add segmentation-specific parameters
-        inputs["required"].update(
-            {
-                "output_confidence_masks": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "Output confidence mask (0-1) instead of category mask. Disables multiclass/visualization.",
-                    },
-                ),
-                "threshold": (
-                    "FLOAT",
-                    {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "Confidence threshold for confidence mask output mode. Pixels below threshold become 0.",
-                    },
-                ),
-                "generate_visualization": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "Generate a colored visualization image (only works in category mask mode).",
-                    },
-                ),
-            }
-        )
-
-        # Rename the delegate parameter for consistency with original implementation
+        inputs["required"].update({
+            "output_confidence_masks": ("BOOLEAN", {"default": False, "tooltip": "Output confidence mask (0-1) instead of category mask. Disables multiclass/visualization."}),
+            "threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Confidence threshold for confidence mask output mode."}),
+            "generate_visualization": ("BOOLEAN", {"default": False, "tooltip": "Generate a colored visualization image (only works in category mask mode)."}),
+        })
         inputs["required"]["delegate_mode"] = inputs["required"].pop("delegate")
-
         return inputs
 
     # --- Helper methods from Stream-Pack ---
@@ -146,101 +113,71 @@ class MediaPipeImageSegmenterNode(BaseMediaPipeDetectorNode):
     ):
         """Performs image segmentation with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
-
-        # Determine which output type the detector needs
+        # 2. Determine which masks to request from the backend
         request_confidence = output_confidence_masks
-        # Need category mask if confidence isn't requested OR if visualization is needed
         request_category = not output_confidence_masks or generate_visualization
-
         if not request_confidence and not request_category:
-            # Should not happen with the logic above, but as a safeguard
-            raise ValueError("Internal logic error: No mask type determined for segmenter.")
+            raise ValueError("Internal logic error: No mask type was requested for the segmenter.")
 
-        # Call segmenter's segment method
-        # Returns lists (one element per image in batch)
-        batch_results_confidence, batch_results_category = detector.segment(
-            image,
-            output_confidence_masks=request_confidence,
-            output_category_mask=request_category,
-            running_mode=running_mode,
-            delegate_mode=delegate_mode,
-        )
+        # 3. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate_mode,
+            "output_confidence_masks": request_confidence,
+            "output_category_mask": request_category,
+        }
 
-        # Initialize output lists
+        # 4. Initialize or update detector using the new base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
+
+        # 5. Perform detection on the image batch
+        batch_results_confidence, batch_results_category = detector.detect(image)
+
+        # 6. Process the results into the final output tensors
         batch_size = image.shape[0]
         h, w = image.shape[1], image.shape[2]
         all_primary_masks = []
         all_vis_images = []
         all_category_masks = []
-        default_vis_tensor = torch.zeros((h, w, 3), dtype=torch.float32, device=image.device)  # HWC
+        default_vis_tensor = torch.zeros((h, w, 3), dtype=torch.float32, device=image.device)
 
-        # --- Process results based on node inputs ---
         is_multiclass = self.is_multiclass_model(model_info)
 
-        # Loop through batch results
         for i in range(batch_size):
-            # Get results for the current image
             confidence_masks_hw_list = batch_results_confidence[i] if batch_results_confidence else None
             category_mask_hw = batch_results_category[i] if batch_results_category else None
 
-            # Initialize outputs for this image
             current_primary_mask_hw = torch.zeros((h, w), dtype=torch.float32, device=image.device)
             current_vis_image_hwc = default_vis_tensor
             current_category_mask_hw = torch.zeros((h, w), dtype=torch.long, device=image.device)
 
             if output_confidence_masks:
-                # User wants confidence mask as primary output
                 if confidence_masks_hw_list:
-                    # Take the first confidence mask (often foreground vs background)
                     conf_mask_hw = confidence_masks_hw_list[0]
-                    # Apply threshold
                     conf_mask_hw_thresh = torch.where(conf_mask_hw >= threshold, conf_mask_hw, torch.zeros_like(conf_mask_hw))
-                    current_primary_mask_hw = conf_mask_hw_thresh  # HW
-                # Visualization and multiclass output are disabled/invalid in confidence mode
-                generate_visualization_for_this = False
+                    current_primary_mask_hw = conf_mask_hw_thresh
             else:
-                # User wants category mask (default or for visualization)
                 if category_mask_hw is not None:
-                    # Determine primary MASK output (HW Float)
-                    if is_multiclass:
-                        # Treat non-background as foreground for the primary mask
-                        primary_mask_hw = (category_mask_hw > 0).float()
-                    else:
-                        # Binary models: Category 1 is foreground
-                        primary_mask_hw = (category_mask_hw > 0).float()
-                    current_primary_mask_hw = primary_mask_hw  # HW
+                    current_primary_mask_hw = (category_mask_hw > 0).float()
+                    current_category_mask_hw = category_mask_hw
 
-                    # Prepare raw category mask output (HW Long Tensor)
-                    current_category_mask_hw = category_mask_hw  # Already Long
-
-                    # Generate visualization if requested (and category mask exists)
-                    generate_visualization_for_this = generate_visualization
-                    if generate_visualization_for_this:
-                        # Convert to NumPy for OpenCV, then back to tensor
+                    if generate_visualization:
                         category_np = category_mask_hw.cpu().numpy().astype(np.uint8)
                         vis_np = self.create_visualization(category_np, is_multiclass)
                         if vis_np is not None:
-                            # Convert back to tensor (HWC)
                             vis_tensor = torch.from_numpy(vis_np).to(dtype=torch.float32, device=image.device) / 255.0
-                            current_vis_image_hwc = vis_tensor  # HWC
+                            current_vis_image_hwc = vis_tensor
 
-            # Add results for this image to the batch results
-            all_primary_masks.append(current_primary_mask_hw)  # HW
-            all_vis_images.append(current_vis_image_hwc)  # HWC
-            all_category_masks.append(current_category_mask_hw)  # HW
+            all_primary_masks.append(current_primary_mask_hw)
+            all_vis_images.append(current_vis_image_hwc)
+            all_category_masks.append(current_category_mask_hw)
 
-        # Stack all results to return as tensors
-        primary_mask_tensor = torch.stack(all_primary_masks, dim=0)  # BHW
-        vis_image_tensor = torch.stack(all_vis_images, dim=0)  # BHWC
-        category_mask_tensor = torch.stack(all_category_masks, dim=0)  # BHW
-
-        # Ensure multiclass_segments is in the right format (BHW) for downstream nodes
-        # Not adding an unsqueeze here, as we're handling both formats in the select_segment node
+        primary_mask_tensor = torch.stack(all_primary_masks, dim=0)
+        vis_image_tensor = torch.stack(all_vis_images, dim=0)
+        category_mask_tensor = torch.stack(all_category_masks, dim=0)
 
         return (primary_mask_tensor, vis_image_tensor, category_mask_tensor)
 

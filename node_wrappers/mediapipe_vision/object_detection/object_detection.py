@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 from ....src.mediapipe_vision.object_detection.detector import ObjectDetector
@@ -87,26 +86,30 @@ class MediaPipeObjectDetectorNode(BaseMediaPipeDetectorNode):
     ):
         """Performs object detection with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
-
-        # Parse the allow / deny list string into a list, or None if empty
+        # 2. Parse string lists into lists of strings or None
         allowed_categories = [cat.strip() for cat in category_allowlist.split(',') if cat.strip()] or None
         denied_categories = [cat.strip() for cat in category_denylist.split(',') if cat.strip()] or None
+        
+        # 3. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "score_threshold": min_confidence,
+            "max_results": max_results,
+            "category_allowlist": allowed_categories,
+            "category_denylist": denied_categories,
+        }
 
-        # Perform detection with all parameters
-        batch_results = detector.detect(
-            image,
-            score_threshold=min_confidence,
-            max_results=max_results,
-            category_allowlist=allowed_categories,
-            category_denylist=denied_categories,
-            running_mode=running_mode,
-            delegate=delegate
-        )
+        # 4. Initialize or update detector using the new base class method
+        # This will create/re-create the detector only if the config has changed
+        detector = self.initialize_or_update_detector(model_path, **config)
+
+        # 5. Perform detection on the image batch
+        # The detector instance is now fully configured, so we just pass the image
+        batch_results = detector.detect(image)
 
         return (batch_results,)
 

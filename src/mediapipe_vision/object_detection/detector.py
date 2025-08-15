@@ -15,7 +15,7 @@ from ..types import BoundingBox, ObjectDetectionCategory, ObjectDetectionResult
 class ObjectDetector(BaseDetector[ObjectDetectionResult]):
     """Detects objects using MediaPipe ObjectDetector."""
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, **kwargs):
         """Initialize the detector with the model path.
 
         Args:
@@ -24,10 +24,8 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
         if not model_path:
             raise ValueError("A valid model_path must be provided.")
 
-        self.model_path = model_path
-        self._detector_instance = None
-        self._current_options = None
-        self._timestamp_provider = None  # Added
+        # Pass all config options to the base class to handle instance creation
+        super().__init__(model_path, **kwargs)
 
     def _create_detector_options(self, base_options: python.BaseOptions,
                                mode_enum: vision.RunningMode, **kwargs) -> vision.ObjectDetectorOptions:
@@ -45,25 +43,11 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
         )
 
     def _create_detector_instance(self, options: vision.ObjectDetectorOptions) -> vision.ObjectDetector:
+        """Create ObjectDetector-specific instance."""
         return vision.ObjectDetector.create_from_options(options)
 
-    def _get_options_tuple(self, running_mode: str = None, delegate: str = None, **kwargs) -> tuple:
-        if self._current_options:
-            return (
-                self._current_options.score_threshold,
-                self._current_options.max_results,
-                running_mode,
-                delegate,
-            )
-        else:
-            return (
-                kwargs.get('score_threshold', 0.5),
-                kwargs.get('max_results', 5),
-                running_mode,
-                delegate,
-            )
-
     def _process_detection_result(self, detection_result: Any) -> List[ObjectDetectionResult]:
+        """Process a single image's detection result."""
         current_image_detections = []
         if detection_result and detection_result.detections:
             for detection in detection_result.detections:
@@ -83,26 +67,13 @@ class ObjectDetector(BaseDetector[ObjectDetectionResult]):
                 ]
 
                 current_image_detections.append(ObjectDetectionResult(bounding_box=bbox, categories=categories))
-
         return current_image_detections
 
-    def detect(
-        self,
-        image: torch.Tensor,
-        score_threshold: float = 0.5,
-        max_results: int = 5,
-        category_allowlist: Optional[List[str]] = None,
-        category_denylist: Optional[List[str]] = None,
-        running_mode: str = "video",
-        delegate: str = "cpu",
-    ) -> List[List[ObjectDetectionResult]]:
-        """Detects objects in the input image tensor."""
-        return super().detect(
-            image,
-            running_mode=running_mode,
-            delegate=delegate,
-            score_threshold=score_threshold,
-            max_results=max_results,
-            category_allowlist=category_allowlist,
-            category_denylist=category_denylist,
-        )
+    def detect(self, image_batch: torch.Tensor) -> List[List[ObjectDetectionResult]]:
+        """Detects objects in a batch of images."""
+        batch_results = []
+        for i in range(image_batch.shape[0]):
+            # Use the run_detection method from the base class for each image
+            result = self.run_detection(image_batch[i])
+            batch_results.append(result)
+        return batch_results

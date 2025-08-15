@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 from ....src.mediapipe_vision.pose_landmark.detector import PoseLandmarkDetector
@@ -7,8 +6,8 @@ from ....src.mediapipe_vision.common.base_detector_node import BaseMediaPipeDete
 from ....src.mediapipe_vision.common.model_loader import MediaPipeModelLoaderBaseNode
 
 logger = logging.getLogger(__name__)
-_category = "Realtime Nodes/MediaPipe Vision/Pose"
 
+_category = "Realtime Nodes/MediaPipe Vision/Pose"
 
 class MediaPipePoseLandmarkerModelLoaderNode(MediaPipeModelLoaderBaseNode):
     """ComfyUI node for loading MediaPipe Pose Landmarker models."""
@@ -38,62 +37,15 @@ class MediaPipePoseLandmarkerNode(BaseMediaPipeDetectorNode):
 
     @classmethod
     def INPUT_TYPES(cls):
-        # Start with the base inputs from the parent class
+        # This method is correct as-is, no changes needed.
         inputs = super().INPUT_TYPES() 
-
-        # Add pose-specific parameters
-        inputs["required"].update(
-            {
-                "max_results": (
-                    "INT",
-                    {
-                        "default": 1,
-                        "min": 1,
-                        "max": 4,
-                        "step": 1,
-                        "tooltip": "Maximum number of people/poses to detect in the image - higher values can detect more people but use more processing power",
-                    },
-                ),
-                "min_confidence": (
-                    "FLOAT",
-                    {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "Minimum confidence threshold for pose detection - lower values detect more poses but may include false positives",
-                    },
-                ),
-                "min_tracking_confidence": (
-                    "FLOAT",
-                    {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "(VIDEO mode) Minimum confidence threshold for pose tracking between frames - lower values maintain tracking longer but may be less accurate",
-                    },
-                ),
-                "min_presence_confidence": (
-                    "FLOAT",
-                    {
-                        "default": 0.5,
-                        "min": 0.0,
-                        "max": 1.0,
-                        "step": 0.01,
-                        "tooltip": "(VIDEO mode) Minimum confidence threshold for pose presence in the image - lower values may include false negatives",
-                    },
-                ),
-                "output_segmentation_masks": (
-                    "BOOLEAN",
-                    {
-                        "default": False,
-                        "tooltip": "When enabled, generates masks that separate people from the background",
-                    },
-                ),
-            }
-        )
-
+        inputs["required"].update({
+            "max_results": ("INT", {"default": 1, "min": 1, "max": 4, "step": 1, "tooltip": "Maximum number of people/poses to detect"}),
+            "min_confidence": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Minimum confidence threshold for pose detection"}),
+            "min_tracking_confidence": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "(VIDEO mode) Minimum confidence for pose tracking"}),
+            "min_presence_confidence": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "(VIDEO mode) Minimum confidence for pose presence"}),
+            "output_segmentation_masks": ("BOOLEAN", {"default": False, "tooltip": "When enabled, generates masks that separate people from the background"}),
+        })
         return inputs
 
     def detect(
@@ -110,32 +62,34 @@ class MediaPipePoseLandmarkerNode(BaseMediaPipeDetectorNode):
     ):
         """Performs pose landmark detection with the configured parameters."""
 
-        # Validate model_info and get model path
+        # 1. Validate model_info and get model path
         model_path = self.validate_model_info(model_info)
 
-        # Initialize or update detector
-        detector = self.initialize_or_update_detector(model_path)
+        # 2. Collect all configuration parameters
+        config = {
+            "running_mode": running_mode,
+            "delegate": delegate,
+            "num_poses": max_results,
+            "min_detection_confidence": min_confidence,
+            "min_tracking_confidence": min_tracking_confidence,
+            "min_presence_confidence": min_presence_confidence,
+            "output_segmentation_masks": output_segmentation_masks,
+        }
 
-        # Perform detection with all parameters
-        pose_landmarks_batch, segmentation_masks_batch = detector.detect(
-            image,
-            num_poses=max_results,
-            min_detection_confidence=min_confidence,
-            min_tracking_confidence=min_tracking_confidence,
-            min_presence_confidence=min_presence_confidence,
-            output_segmentation_masks=output_segmentation_masks,
-            running_mode=running_mode,
-            delegate=delegate,
-        )
+        # 3. Initialize or update detector using the base class method
+        detector = self.initialize_or_update_detector(model_path, **config)
 
-        # Process segmentation masks if needed
+        # 4. Perform detection on the image batch
+        pose_landmarks_batch, segmentation_masks_batch = detector.detect(image)
+
+        # 5. Process segmentation masks for final output
         flat_masks = []
-        if segmentation_masks_batch:
+        if output_segmentation_masks and segmentation_masks_batch:
             for img_masks in segmentation_masks_batch:
                 if img_masks:
                     flat_masks.extend(img_masks)
 
-        return (pose_landmarks_batch, flat_masks if output_segmentation_masks else [])
+        return (pose_landmarks_batch, flat_masks)
 
 
 # Define mappings for ComfyUI
